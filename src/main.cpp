@@ -17,20 +17,20 @@ using namespace Eigen;
 
 #define PI 3.14159265
 #define H 2 //The horizon
-#define PLA 0
+#define ASA 0 //Put to 1 if you want to use ASA algorithm
 
-//X space [-2,2]²
+//X space [-2,2]ï¿½
 #define A -2
 #define B 2
 #define E -2
 #define F 2
 
-const int d = 1; //approximation parameter
+const int d = 1; //approximation parameter for Bernstein degree
 const int n_A = 5; //Number of actions
-const int n_theta = 30; //Number of thetas...
-const float sigma = 0.5;
-const float sigma_theta = 0.4;
-const int riemann_number = 100;
+const int n_theta = 30; //Number of discretized thetas
+const float sigma = 0.5; //Standard deviation for the target initial position   
+const float sigma_theta = 0.4; //Standard deviation for the measurement noise
+const int riemann_number = 100; //Riemann parameter
 
 //Time initialisation process
 unsigned seed = chrono::system_clock::now().time_since_epoch().count();
@@ -43,19 +43,23 @@ uniform_real_distribution<long double> distribution2(0.0, 1.0);
 VectorXf actions = VectorXf::LinSpaced(n_A, -2*PI / 5, 2*PI / 5);
 VectorXf discretizedThetas = VectorXf::LinSpaced(n_theta, -PI, PI);
 
+//Those will be used to store the coefficients of the densities
 float** coeff;
 float** coeffcarre;
 
+// define argmax
 template <typename T, typename M>
 int arg_max(std::vector<T, M> const& vec) {
     return static_cast<int>(std::distance(vec.begin(), max_element(vec.begin(), vec.end())));
 }
 
+// define argmin
 template <typename T, typename M>
 int arg_min(std::vector<T, M> const& vec) {
     return static_cast<int>(std::distance(vec.begin(), min_element(vec.begin(), vec.end())));
 }
 
+//argmax function for the size*index part of vector<float> M,
 int arg_max_ind(vector<float> M, int index, int size) {
     float max = 0;
     int arg = 0;
@@ -73,7 +77,7 @@ int arg_max_ind(vector<float> M, int index, int size) {
 struct tree {
     int root;
     Vector4f position; //position Z of the node 
-    tree* childs[n_A];
+    tree* childs[n_A];//pointer to the childs of the node
     tree* previous; //pointer to the father of the node
     vector<vector<float>> densities; // matrix with all the densities
     vector<long double> value_function; // vector containing the value function result and the action chosen 
@@ -164,7 +168,7 @@ struct tree {
 
                 for (int i = 0; i < 2 * d + 1; i++) {
                     for (int j = 0; j < 2 * d + 1; j++) {
-                        densities[i][j + teta * (2 * d + 1) + prev_index * n_theta * (2 * d + 1)] = coeffcarre[i][j] + prev->densities[i][j + prev_index * (2 * d + 1)]; //+ l'ancienne densité
+                        densities[i][j + teta * (2 * d + 1) + prev_index * n_theta * (2 * d + 1)] = coeffcarre[i][j] + prev->densities[i][j + prev_index * (2 * d + 1)]; //+ l'ancienne densitï¿½
                     }
                 }
             }
@@ -199,6 +203,7 @@ struct tree {
 
     }
 
+    //tree function used when starting from the last position of another simulation, it initializes the tree with last position and estimation
     tree(int a, Vector4f z, vector<vector<float>> dens, int index ,int depth, float** coeffcarre, float** coeff) {
         root = a;
         previous = NULL;
@@ -250,6 +255,7 @@ struct tree {
 
 };
 
+//used in ASA only
 struct policy {
     vector<int> actions;
     policy* childs[n_A];
@@ -443,7 +449,7 @@ void printDensity(tree* t, int index, int d) {
     }
 }
 
-//Routine créant l'arbre à partie de la distribution initiale 
+//Routine crï¿½ant l'arbre ï¿½ partie de la distribution initiale 
 void routine(tree** t, Vector4f z, float** coeffcarre, float** coeff,vector<vector<float>> dens,int index) {
 
     auto start = chrono::steady_clock::now();
@@ -475,6 +481,7 @@ void routine(tree** t, Vector4f z, float** coeffcarre, float** coeff,vector<vect
 
 }
 
+//For ASA, compute the reward associated to a path
 float path_value(policy* p, tree* t, float theta) {
     int action = p->actions[0];
     normal_distribution<float> normal(0, sigma_theta);
@@ -579,7 +586,7 @@ long double log_phiproba(tree* t, policy* p, int h) {
     return value;
 }
 
-//Compute g_{k+1} to update the proba matrix
+//Compute g_{k+1} to update the proba matrix (ASA)
 void boltzmann(vector<policy*> p, tree* t, int k, vector<float> Vk, float Tk, long double phi_denominator) {
     float new_proba;
     if (k == H)
@@ -607,7 +614,7 @@ void boltzmann(vector<policy*> p, tree* t, int k, vector<float> Vk, float Tk, lo
     return;
 }
 
-//Compute g_{k+1} to update the proba matrix
+//Compute g_{k+1} to update the proba matrix (ASA)
 void log_boltzmann(vector<policy*> p, tree* t, int k,int h, vector<float> Vk, float Tk,long double max_an,long double max_bn) {
     float new_proba;
     long double log_denominateur=0;
@@ -761,6 +768,8 @@ vector<int> ASA(tree* t, int Nk, int Mk, float theta,int* index) {
     return path_actions;
 }
 
+
+
 int main(int argc, char** argv)
 {
     /* initialize random seed: */
@@ -814,6 +823,7 @@ int main(int argc, char** argv)
     //Number of simulations
     int N = 20;
 
+    //Initialize the files used to store the result
 
     string file_path_a(argv[1]);
     file_path_a.append("/action_file.txt");
@@ -852,8 +862,8 @@ int main(int argc, char** argv)
     file_v.open("valuefunction_file.txt", ios_base::out | ios_base::in);
 
 
-#if PLA==0
-        //Do the simulations
+#if ASA==0
+        //Do the simulations N times
         vector<vector<float>> dummy;
         for (int n = 0; n < N; n++) {
             //Create the tree and compute the bellman values and actions associated 
@@ -885,7 +895,7 @@ int main(int argc, char** argv)
                 action_opti = t2->value_function[2 * index_value + 1];
                 path.push_back(nextPos(path.back(), actions[action_opti], 1));
                 cout << "action is " << action_opti << "with value " << t2->value_function[2 * index_value] << " and new position is " << path.back().transpose() << endl;
-		x[0]+= vtarget;
+		        x[0]+= vtarget;
                 //Write to file some results
                 dummy = t2->densities;
                 file_a << action_opti << endl;
@@ -902,7 +912,7 @@ int main(int argc, char** argv)
 
 
         }
-#elif PLA == 1
+#elif ASA == 1
     //hello();
     float theta;
     //t = new tree(0, z, H, coeffcarre, coeff);
@@ -1022,14 +1032,14 @@ int main(int argc, char** argv)
 
 }
 
-// Exécuter le programme : Ctrl+F5 ou menu Déboguer > Exécuter sans débogage
-// Déboguer le programme : F5 ou menu Déboguer > Démarrer le débogage
+// Exï¿½cuter le programme : Ctrl+F5 ou menu Dï¿½boguer > Exï¿½cuter sans dï¿½bogage
+// Dï¿½boguer le programme : F5 ou menu Dï¿½boguer > Dï¿½marrer le dï¿½bogage
 
-// Astuces pour bien démarrer : 
-//   1. Utilisez la fenêtre Explorateur de solutions pour ajouter des fichiers et les gérer.
-//   2. Utilisez la fenêtre Team Explorer pour vous connecter au contrôle de code source.
-//   3. Utilisez la fenêtre Sortie pour voir la sortie de la génération et d'autres messages.
-//   4. Utilisez la fenêtre Liste d'erreurs pour voir les erreurs.
-//   5. Accédez à Projet > Ajouter un nouvel élément pour créer des fichiers de code, ou à Projet > Ajouter un élément existant pour ajouter des fichiers de code existants au projet.
-//   6. Pour rouvrir ce projet plus tard, accédez à Fichier > Ouvrir > Projet et sélectionnez le fichier .sln.
+// Astuces pour bien dï¿½marrer : 
+//   1. Utilisez la fenï¿½tre Explorateur de solutions pour ajouter des fichiers et les gï¿½rer.
+//   2. Utilisez la fenï¿½tre Team Explorer pour vous connecter au contrï¿½le de code source.
+//   3. Utilisez la fenï¿½tre Sortie pour voir la sortie de la gï¿½nï¿½ration et d'autres messages.
+//   4. Utilisez la fenï¿½tre Liste d'erreurs pour voir les erreurs.
+//   5. Accï¿½dez ï¿½ Projet > Ajouter un nouvel ï¿½lï¿½ment pour crï¿½er des fichiers de code, ou ï¿½ Projet > Ajouter un ï¿½lï¿½ment existant pour ajouter des fichiers de code existants au projet.
+//   6. Pour rouvrir ce projet plus tard, accï¿½dez ï¿½ Fichier > Ouvrir > Projet et sï¿½lectionnez le fichier .sln.
 
