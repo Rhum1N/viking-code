@@ -32,3 +32,18 @@ F. Dufour, A. Genadot, R. Namyst. "The Bearing Only Localization Problem via Par
 
 ## Brief problem description
 
+
+## Results
+The target is in red, the observer is following the blue path and has the black square as initial position. 
+
+This is the perfect case where the position of the target is known.
+
+![Alt text](results/graphs/perfect-case-spiral.png)
+
+### Case where target is non-moving and of unknown whereabout
+![Alt text](results/graphs/trajectoire1208-03.png)
+![Alt text](results/graphs/trajectoire1232-03.png)
+
+### Case where the target is moving and of unknown whereabout
+![Alt text](results/graphs/1503vx075png.png)
+
