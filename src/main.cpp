@@ -43,9 +43,6 @@ uniform_real_distribution<long double> distribution2(0.0, 1.0);
 VectorXf actions = VectorXf::LinSpaced(n_A, -2*PI / 5, 2*PI / 5);
 VectorXf discretizedThetas = VectorXf::LinSpaced(n_theta, -PI, PI);
 
-//Those will be used to store the coefficients of the densities
-float** coeff;
-float** coeffcarre;
 
 // define argmax
 template <typename T, typename M>
